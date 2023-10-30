@@ -272,6 +272,10 @@ func (c *Client) Close() {
 	})
 }
 
+func (c *Client) HandleConn(conn Conn) {
+	c.handleConn(conn)
+}
+
 func (c *Client) handleConn(conn Conn) {
 	localConn := conn.LocalConnection
 	if c.kafkaClientCert != nil {
