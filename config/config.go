@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/grepplabs/kafka-proxy/pkg/libs/util"
 	"github.com/pkg/errors"
 )
@@ -47,8 +48,9 @@ type GSSAPIConfig struct {
 }
 
 type AWSConfig struct {
-	Region  string
-	Profile string
+	Region      string
+	Profile     string
+	Credentials aws.Credentials
 }
 
 type Config struct {

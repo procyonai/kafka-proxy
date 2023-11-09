@@ -9,7 +9,6 @@ import (
 	"net"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/config"
 	proxyconfig "github.com/grepplabs/kafka-proxy/config"
 	"github.com/grepplabs/kafka-proxy/proxy/protocol"
 	"github.com/pkg/errors"
@@ -33,20 +32,20 @@ func NewAwsMSKIamAuth(
 	writeTimeout time.Duration,
 	awsConfig *proxyconfig.AWSConfig,
 ) (SASLAuthByProxy, error) {
-	var optFns []func(*config.LoadOptions) error
-	if awsConfig.Region != "" {
-		optFns = append(optFns, config.WithRegion(awsConfig.Region))
-	}
-	if awsConfig.Profile != "" {
-		optFns = append(optFns, config.WithSharedConfigProfile(awsConfig.Profile))
-	}
-	cfg, err := config.LoadDefaultConfig(context.Background(), optFns...)
-	if err != nil {
-		return nil, fmt.Errorf("loading aws config: %v", err)
-	}
+	// var optFns []func(*config.LoadOptions) error
+	// if awsConfig.Region != "" {
+	// 	optFns = append(optFns, config.WithRegion(awsConfig.Region))
+	// }
+	// if awsConfig.Profile != "" {
+	// 	optFns = append(optFns, config.WithSharedConfigProfile(awsConfig.Profile))
+	// }
+	// cfg, err := config.LoadDefaultConfig(context.Background(), optFns...)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("loading aws config: %v", err)
+	// }
 	return &AwsMSKIamAuth{
 		clientID:     clientId,
-		signer:       newMechanism(cfg),
+		signer:       newMechanism(awsConfig),
 		readTimeout:  readTimeout,
 		writeTimeout: writeTimeout,
 	}, nil

@@ -14,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	signer "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	proxyconfig "github.com/grepplabs/kafka-proxy/config"
 	"github.com/pkg/errors"
 )
 
@@ -42,7 +43,8 @@ type Mechanism struct {
 	// The sigv4.Signer of aws-sdk-go-v2 to use when signing the request. Required.
 	Signer *signer.Signer
 	// The aws.Config.Credentials or config.CredentialsProvider of aws-sdk-go-v2. Required.
-	Credentials aws.CredentialsProvider
+	// Credentials aws.CredentialsProvider
+	Credentials aws.Credentials
 	// The region where the msk cluster is hosted, e.g. "us-east-1". Required.
 	Region string
 }
@@ -82,12 +84,7 @@ func (m *Mechanism) preSign(ctx context.Context, host string) (map[string]string
 		return nil, errors.Wrap(err, "building request")
 	}
 
-	creds, err := m.Credentials.Retrieve(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "credential retrieval")
-	}
-
-	signedUrl, header, err := m.Signer.PresignHTTP(ctx, creds, req, signPayload, signService, m.Region, time.Now())
+	signedUrl, header, err := m.Signer.PresignHTTP(ctx, m.Credentials, req, signPayload, signService, m.Region, time.Now())
 	if err != nil {
 		return nil, errors.Wrap(err, "signing url")
 	}
@@ -141,7 +138,7 @@ func buildSignedMap(u *url.URL, header http.Header) map[string]string {
 }
 
 // NewMechanism provides
-func newMechanism(awsCfg aws.Config) *Mechanism {
+func newMechanism(awsCfg *proxyconfig.AWSConfig) *Mechanism {
 	return &Mechanism{
 		Signer:      signer.NewSigner(),
 		Credentials: awsCfg.Credentials,
