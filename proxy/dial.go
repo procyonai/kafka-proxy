@@ -5,17 +5,19 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
-	"github.com/pkg/errors"
-	"golang.org/x/net/proxy"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
+	"golang.org/x/net/proxy"
 )
 
 type Dialer interface {
 	Dial(network, addr string) (c net.Conn, err error)
+	DialAndAuthConn(conn net.Conn) (c net.Conn, err error)
 }
 
 type directDialer struct {
@@ -33,6 +35,16 @@ func (d directDialer) Dial(network, addr string) (net.Conn, error) {
 		return nil, err
 	}
 	err = conn.SetDeadline(time.Now().Add(d.dialTimeout))
+	if err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return conn, err
+}
+
+func (d directDialer) DialAndAuthConn(conn net.Conn) (net.Conn, error) {
+
+	err := conn.SetDeadline(time.Now().Add(d.dialTimeout))
 	if err != nil {
 		conn.Close()
 		return nil, err
@@ -67,11 +79,62 @@ func (d socks5Dialer) Dial(network, addr string) (net.Conn, error) {
 	}
 	return conn, nil
 }
+func (d socks5Dialer) DialAndAuthConn(conn net.Conn) (net.Conn, error) {
+	return conn, nil
+
+}
 
 type tlsDialer struct {
 	timeout   time.Duration
 	rawDialer Dialer
 	config    *tls.Config
+}
+
+func (d tlsDialer) DialAndAuthConn(rawConn net.Conn) (net.Conn, error) {
+	if d.config == nil {
+		return nil, errors.New("tlsConfig must not be nil")
+	}
+	if d.rawDialer == nil {
+		return nil, errors.New("rawDialer must not be nil")
+	}
+
+	timeout := d.timeout
+
+	var errChannel chan error
+	var err error
+	if timeout != 0 {
+		errChannel = make(chan error, 2)
+		timer := time.AfterFunc(timeout, func() {
+			errChannel <- errors.Errorf("Handshake timeout to %s after %v", rawConn.LocalAddr().String(), timeout)
+		})
+		defer timer.Stop()
+	}
+	config := d.config
+	// If no ServerName is set, infer the ServerName
+	// from the hostname we're connecting to.
+	if config.ServerName == "" {
+		// Make a copy to avoid polluting argument or default.
+		c := config.Clone()
+		// c.ServerName = hostname
+		config = c
+	}
+	conn := tls.Client(rawConn, config)
+
+	if timeout == 0 {
+		err = conn.Handshake()
+	} else {
+		go func() {
+			errChannel <- conn.Handshake()
+		}()
+
+		err = <-errChannel
+	}
+
+	if err != nil {
+		rawConn.Close()
+		return nil, err
+	}
+	return conn, nil
 }
 
 // see tls.DialWithDialer
@@ -142,6 +205,10 @@ type httpProxy struct {
 	network            string
 	hostPort           string
 	username, password string
+}
+
+func (d httpProxy) DialAndAuthConn(conn net.Conn) (net.Conn, error) {
+	return conn, nil
 }
 
 func (s *httpProxy) Dial(network, addr string) (net.Conn, error) {

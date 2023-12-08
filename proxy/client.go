@@ -18,6 +18,7 @@ import (
 type Conn struct {
 	BrokerAddress   string
 	LocalConnection net.Conn
+	AuthConnection  net.Conn
 }
 
 // Client is a type to handle connecting to a Server. All fields are required
@@ -31,7 +32,7 @@ type Client struct {
 	// config of Proxy request-response processor (instance p)
 	processorConfig ProcessorConfig
 
-	dialer         Dialer
+	Dialer         Dialer
 	tcpConnOptions TCPConnOptions
 
 	stopRun  chan struct{}
@@ -142,7 +143,7 @@ func NewClient(conns *ConnSet, c *config.Config, netAddressMappingFunc config.Ne
 		return nil, err
 	}
 
-	return &Client{conns: conns, config: c, dialer: dialer, tcpConnOptions: tcpConnOptions, stopRun: make(chan struct{}, 1),
+	return &Client{conns: conns, config: c, Dialer: dialer, tcpConnOptions: tcpConnOptions, stopRun: make(chan struct{}, 1),
 		saslAuthByProxy: saslAuthByProxy,
 		authClient: &AuthClient{
 			enabled:       c.Auth.Gateway.Client.Enable,
@@ -296,7 +297,7 @@ func (c *Client) handleConn(conn Conn) {
 		logrus.Infof("Dial address changed from %s to %s", conn.BrokerAddress, dialAddress)
 	}
 
-	server, err := c.DialAndAuth(dialAddress)
+	server, err := c.DialAndAuthConn(conn.AuthConnection, dialAddress)
 	if err != nil {
 		logrus.Infof("couldn't connect to %s(%s): %v", dialAddress, conn.BrokerAddress, err)
 		_ = conn.LocalConnection.Close()
@@ -316,7 +317,7 @@ func (c *Client) handleConn(conn Conn) {
 }
 
 func (c *Client) DialAndAuth(brokerAddress string) (net.Conn, error) {
-	conn, err := c.dialer.Dial("tcp", brokerAddress)
+	conn, err := c.Dialer.Dial("tcp", brokerAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -324,6 +325,24 @@ func (c *Client) DialAndAuth(brokerAddress string) (net.Conn, error) {
 		_ = conn.Close()
 		return nil, err
 	}
+	err = c.auth(conn, brokerAddress)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (c *Client) DialAndAuthConn(conn net.Conn, brokerAddress string) (net.Conn, error) {
+	conn, err := c.Dialer.DialAndAuthConn(conn)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
 	err = c.auth(conn, brokerAddress)
 	if err != nil {
 		return nil, err
